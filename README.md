@@ -230,9 +230,13 @@ sequenceDiagram
 
 ## Performance
 
-Measured on Apple M5 Pro with Python 3.11. Loading a 100,000-card deck takes about
-57 ms, and a 10,000-answer session takes about 66 ms. The decisions behind the
-current design are recorded in [`docs/performance_decisions.md`](docs/performance_decisions.md).
+Measured on Apple M5 Pro with Python 3.11. Loading a 10,000-card deck takes about
+5 ms, and a 10,000-answer CLI session about 110 ms on the latest run. Run-to-run
+variance on this machine is large, so compare changes with an A/B test in one
+process. The file limit means a deck the app accepts holds roughly 20,000 short
+cards. The decisions behind the current design, including the optimizations that
+were tried and rejected, are in
+[`docs/performance_decisions.md`](docs/performance_decisions.md).
 
 ## Project layout
 
