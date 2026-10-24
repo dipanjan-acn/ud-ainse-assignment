@@ -118,6 +118,8 @@ python -m black --check .                         # formatting
 python -m isort --check-only .                    # import order
 python -m flake8 .                                # linting, no errors
 python -m mypy .                                  # type checking, strict
+python -m bandit -r . -x ./venv,./tests,./scripts # security scan of app code
+python -m pip_audit -r requirements.txt           # known dependency vulnerabilities
 ```
 
 The suite has 133 tests and measures 100% branch coverage of the application

@@ -17,7 +17,8 @@ sphinx-rtd-theme>=1.0.0
 # Development utilities
 pre-commit>=3.0.0
 bandit>=1.7.0  # Security linting
-safety>=2.0.0  # Security vulnerability scanning
+pip-audit>=2.7.0  # Dependency vulnerability scanning (no account needed)
+filelock>=4.2.1  # Fixes CVE-2026-112907, CVE-2026-112913, CVE-2026-112940
 
 # Optional: For more advanced projects
 requests>=2.28.0  # HTTP requests

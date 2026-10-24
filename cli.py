@@ -1,7 +1,6 @@
 """Command-line interface: parse arguments, load a deck, and run the quiz."""
 
 import argparse
-import random
 import sys
 from contextlib import ExitStack
 from pathlib import Path
@@ -10,7 +9,7 @@ from typing import Any, Callable, Optional, Sequence, TextIO
 from display import format_stats, use_color
 from export import build_report, write_report
 from observers import AnswerLogger
-from quiz_engine import MODE_BUILDERS, QuizSession, create_quiz_mode
+from quiz_engine import MODE_BUILDERS, QuizSession, create_quiz_mode, new_generator
 from quiz_runner import run_quiz
 from utils.file_handler import load_flashcards
 from utils.flashcard import FlashcardError
@@ -104,7 +103,7 @@ def _play(
     """Load the deck, run the quiz, and produce any requested reports."""
     cards = load_flashcards(args.file)
     output = out if out is not None else sys.stdout
-    session = QuizSession(create_quiz_mode(args.mode, cards, random.Random()))
+    session = QuizSession(create_quiz_mode(args.mode, cards, new_generator()))
     color = use_color(output) and not args.no_color
     _check_export_target(args.export)
     _run_with_logging(session, args, ask, output, color)

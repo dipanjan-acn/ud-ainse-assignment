@@ -16,6 +16,16 @@ from utils.flashcard import Flashcard
 
 ModeBuilder = Callable[[Sequence[Flashcard], random.Random], QuizMode]
 
+
+def new_generator() -> random.Random:
+    """Return a generator for shuffling card order.
+
+    This is not used for anything security-sensitive, so the non-cryptographic
+    generator is acceptable here.
+    """
+    return random.Random()  # nosec B311
+
+
 MODE_BUILDERS: dict[str, ModeBuilder] = {
     "sequential": lambda cards, rng: SequentialMode(cards),
     "random": lambda cards, rng: RandomMode(cards, rng),
@@ -37,7 +47,7 @@ def create_quiz_mode(
     if builder is None:
         choices = ", ".join(MODE_BUILDERS)
         raise ValueError(f"Unknown quiz mode '{name}'. Choose from: {choices}.")
-    return builder(cards, rng if rng is not None else random.Random())
+    return builder(cards, rng if rng is not None else new_generator())
 
 
 def normalize_answer(text: str) -> str:
