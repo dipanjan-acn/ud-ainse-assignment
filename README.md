@@ -128,6 +128,21 @@ failures, and full sessions from the command line.
 `tests/test_code_limits.py` enforces two house rules on the application code:
 no function body longer than 7 lines, and no file longer than 200 lines.
 
+### Manual checks
+
+Some behaviour is only visible in a real terminal: colors, the `exit` command,
+and Ctrl+C. `scripts/manual_tty_checks.py` runs those scenarios and the main CLI
+scenarios, compares each result with what is expected, and prints PASS or FAIL.
+
+```bash
+python scripts/manual_tty_checks.py                  # print the results
+python scripts/manual_tty_checks.py --json out.json  # also save them as JSON
+```
+
+The script runs the terminal scenarios inside a pseudo-terminal. It needs macOS
+or Linux, and reports those scenarios as SKIPPED on Windows. Exit code 0 means
+every scenario passed or was skipped.
+
 ## Dependencies
 
 Listed in `requirements.txt`. Runtime code uses only the standard library. The
