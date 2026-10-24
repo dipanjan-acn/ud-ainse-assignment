@@ -186,12 +186,182 @@ kept in memory.
 
 ---
 
+## Correction to the entry count
+
+An earlier summary of this project said the log had eight entries. It had six.
+This file is the source of truth, and the count is now correct. Entries 7 to 12
+below cover the second round of changes: size limits, configuration, AI
+generation, and the security fix.
+
+---
+
+## 2026-10-24 - Choosing urllib over a third-party HTTP client
+
+**Context:** AI-assisted generation needs an HTTP POST with a JSON body.
+
+**AI Tool Used:** Claude
+
+**Prompt/Request:** Add an integration with an external API without adding
+runtime dependencies that the project does not already need.
+
+**AI Response:** The assistant proposed `requests`, which is the common choice,
+and noted that the standard library's `urllib` could do the same job.
+
+**Changes Made:** Used `urllib.request` from the standard library. The project
+already has no runtime dependencies, and `pip-audit` would have had to cover one
+more package.
+
+**Reasoning:** A small, fixed request does not need a client library. Keeping the
+runtime dependency-free also keeps the security scans simpler.
+
+**Outcome:** The generator adds no runtime dependency. Tests replace the network
+call with a fake transport, so they run without network access.
+
+**Lessons Learned:** When a suggestion adds a dependency, check whether the
+standard library covers the need before accepting it.
+
+---
+
+## 2026-10-24 - The size rule split the generator into two modules
+
+**Context:** The first version of `ai_generator.py` contained the request
+building, the reply parsing, and the HTTP transport. It was 204 lines long.
+
+**AI Tool Used:** Claude
+
+**Prompt/Request:** Files may have at most 200 lines, and functions at most 7
+lines of logic.
+
+**AI Response:** The file broke the 200-line rule, and two helpers were too long.
+
+**Changes Made:** Moved the HTTP transport, the error type, and the header helper
+into `ai_transport.py`. The generator keeps the request and reply logic, and it
+imports the transport. The two long helpers were split.
+
+**Reasoning:** The split also matches the design: the transport is the only part
+that touches the network, so it is the only part that needs a security review.
+
+**Outcome:** Both files are under 200 lines. The module boundary is now the
+network boundary.
+
+**Lessons Learned:** A size rule can improve the design, not only the layout.
+
+---
+
+## 2026-10-24 - Bandit found a real weakness, and the fix was a check, not a suppression
+
+**Context:** Bandit flagged the `urlopen` call (B310). It can open `file:` and
+other schemes if the URL is not fixed.
+
+**AI Tool Used:** Claude
+
+**Prompt/Request:** Resolve the bandit finding.
+
+**AI Response:** The simplest response would have been a `# nosec` comment.
+
+**Changes Made:** Added a check that only `https` URLs are accepted, before
+`urlopen` is called. Added tests that `http://`, `file://`, and `ftp://` URLs
+are refused and that `urlopen` is never reached. Added the `# nosec B310`
+comment only after the check, with the reason in the docstring.
+
+**Reasoning:** A suppression hides the warning. The check removes the cause, and
+a test proves it.
+
+**Outcome:** Bandit reports no issues in the app code. The tests fail if the
+check is removed.
+
+**Lessons Learned:** When a scanner flags real behaviour, fix the behaviour first
+and suppress only what remains.
+
+---
+
+## 2026-10-24 - A test helper broke an assertion it did not need to change
+
+**Context:** A configuration test checked the prompt text. To fix a `lambda`
+that mypy rejected, I replaced it with a helper that answered "yes" but did not
+record the prompt.
+
+**AI Tool Used:** Claude
+
+**Prompt/Request:** Fix the mypy error in the test without changing what it
+checks.
+
+**AI Response:** My own edit. The replacement removed the recording, so the test
+could not read the prompt.
+
+**Changes Made:** Restored a local function that records each prompt and then
+answers "yes". Removed the helper that had no remaining use.
+
+**Reasoning:** The fix changed the test's behaviour, not only its typing. Running
+the suite caught it straight away.
+
+**Outcome:** The test passes and checks the prompt again.
+
+**Lessons Learned:** Fixing a type error can change behaviour. Run the tests
+after every edit, not only at the end.
+
+---
+
+## 2026-10-24 - JSON for the config file, not TOML
+
+**Context:** A configuration file is needed. TOML is a common choice.
+
+**AI Tool Used:** Claude
+
+**Prompt/Request:** Add a config file that works with the project's Python
+version.
+
+**AI Response:** TOML support in the standard library (`tomllib`) arrived in Python
+3.11. The project targets 3.10.
+
+**Changes Made:** The config file is JSON, read with the standard `json` module.
+
+**Reasoning:** Using `tomllib` would have broken the project on Python 3.10.
+JSON needs no new code and works on every supported version.
+
+**Outcome:** The config file works on 3.10 and later, and the tests cover
+precedence, errors, and unknown keys.
+
+**Lessons Learned:** Check the minimum supported version before choosing a
+library feature, not after.
+
+---
+
+## 2026-10-24 - A requirements line was silently broken by my own edit
+
+**Context:** A pin was appended to `requirements.txt` with a shell heredoc.
+
+**AI Tool Used:** Claude
+
+**Prompt/Request:** Pin `filelock` to a patched version.
+
+**AI Response:** The file had no trailing newline, so the new line was joined to
+the `pydantic` line, which turned `pydantic` into a comment. The pin was ignored.
+
+**Changes Made:** Found in a dry-run install, where the old `filelock` still
+resolved. Rewrote the file with each requirement on its own line, and checked
+the result with a fresh install and `pip-audit`.
+
+**Reasoning:** The dry run showed the pin had no effect. Checking the file
+directly showed why.
+
+**Outcome:** Every requirement is on its own line, the fresh install succeeds,
+and `pip-audit` reports no advisories.
+
+**Lessons Learned:** Verify a change by its effect, not only by the command
+exiting with status 0.
+
+---
+
 ## Limitations I did not verify
 
 - **Ctrl+C:** The graceful stop is tested by injecting `KeyboardInterrupt`
-  into the answer function, not by pressing a real key in a terminal. I did not
-  test it interactively.
+  into the answer function. A real interrupt has also been sent to a running
+  process, through a pseudo-terminal, in the scripted manual checks.
 - **Colors on Windows:** Only macOS terminals were checked. The ANSI codes are
   standard, but I did not confirm that every Windows console renders them.
+- **AI generation:** Tests use a fake transport. The real service was not called
+  during development, so the reply format is checked against the documented
+  Messages API shape, not against live output.
 - **Coverage gate:** The configured minimum is 100%. The measured value on
   the final run is recorded in `docs/coverage_summary.txt`.

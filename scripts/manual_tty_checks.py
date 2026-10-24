@@ -375,6 +375,40 @@ def cli_scenarios(
             ],
             answers=["exit"],
         ),
+        Scenario(
+            "CLI-09",
+            "Invalid mode in FLASHCARD_MODE gives a clear error",
+            ["-f", "data/glossary.json"],
+            "Exit 1; names the unknown mode",
+            [
+                ("exit code is 1", lambda o: o.code == 1),
+                ("names the mode", lambda o: "Unknown mode 'bogus'" in o.stderr),
+            ],
+            env={"FLASHCARD_MODE": "bogus"},
+        ),
+        Scenario(
+            "CLI-10",
+            "--generate without an API key stops before any network call",
+            ["--generate", "networking", "--save", str(folder / "generated.json")],
+            "Exit 1; message names ANTHROPIC_API_KEY; no deck written",
+            [
+                ("exit code is 1", lambda o: o.code == 1),
+                ("names the variable", lambda o: "ANTHROPIC_API_KEY" in o.stderr),
+                ("no deck written", lambda o: not (folder / "generated.json").exists()),
+            ],
+            env={"ANTHROPIC_API_KEY": ""},
+        ),
+        Scenario(
+            "CLI-11",
+            "--generate without --save is refused",
+            ["--generate", "networking"],
+            "Exit 1; asks for --save",
+            [
+                ("exit code is 1", lambda o: o.code == 1),
+                ("asks for --save", lambda o: "--save" in o.stderr),
+            ],
+            env={"ANTHROPIC_API_KEY": "unused"},
+        ),
     ]
 
 

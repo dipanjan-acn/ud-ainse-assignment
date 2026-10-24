@@ -3,6 +3,9 @@
 from dataclasses import dataclass
 from typing import Any
 
+# Longest allowed front or back text, after trimming spaces.
+MAX_CARD_CHARS = 500
+
 
 class FlashcardError(ValueError):
     """Raised when a deck cannot be loaded or a card is invalid."""
@@ -35,8 +38,18 @@ def flashcard_from_dict(data: Any, position: int) -> Flashcard:
 
 
 def _required_text(data: dict[str, Any], key: str, position: int) -> str:
-    """Return the stripped text under `key`, rejecting blank or non-text values."""
+    """Return the stripped text under `key`, rejecting bad values."""
     value = data.get(key)
     if not isinstance(value, str) or not value.strip():
         raise FlashcardError(f"Card {position} needs a non-empty '{key}' text.")
-    return value.strip()
+    text = value.strip()
+    if len(text) > MAX_CARD_CHARS:
+        raise _too_long(position, key)
+    return text
+
+
+def _too_long(position: int, key: str) -> FlashcardError:
+    """Describe a card field that exceeds MAX_CARD_CHARS."""
+    return FlashcardError(
+        f"Card {position} '{key}' is longer than {MAX_CARD_CHARS} characters."
+    )

@@ -46,8 +46,8 @@ def test_short_flags_are_accepted() -> None:
     assert args.mode == "adaptive"
 
 
-def test_mode_defaults_to_sequential() -> None:
-    assert build_parser().parse_args([]).mode == "sequential"
+def test_mode_is_unset_so_that_config_can_supply_it() -> None:
+    assert build_parser().parse_args([]).mode is None
 
 
 def test_default_deck_is_the_bundled_glossary() -> None:

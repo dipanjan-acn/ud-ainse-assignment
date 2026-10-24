@@ -1,78 +1,31 @@
-"""Command-line interface: parse arguments, load a deck, and run the quiz."""
+"""Command-line interface: parse arguments, resolve settings, and run the quiz."""
 
 import argparse
+import os
 import sys
 from contextlib import ExitStack
 from pathlib import Path
-from typing import Any, Callable, Optional, Sequence, TextIO
+from typing import Any, Callable, Mapping, Optional, Sequence, TextIO
 
+from ai_generator import API_KEY_ENV, generate_deck
+from ai_transport import GenerationError
+from arguments import build_parser
+from config import (
+    DEFAULT_DECK,
+    ConfigError,
+    config_path_from_env,
+    load_config_file,
+    resolve_settings,
+)
 from display import format_stats, use_color
 from export import build_report, write_report
 from observers import AnswerLogger
-from quiz_engine import MODE_BUILDERS, QuizSession, create_quiz_mode, new_generator
+from quiz_engine import QuizSession, create_quiz_mode, new_generator
 from quiz_runner import run_quiz
-from utils.file_handler import load_flashcards
+from utils.file_handler import load_flashcards, save_deck
 from utils.flashcard import FlashcardError
 
-PROJECT_ROOT = Path(__file__).resolve().parent
-DEFAULT_DECK = PROJECT_ROOT / "data" / "glossary.json"
-DEFAULT_MODE = "sequential"
-DESCRIPTION = "Quiz yourself on flashcards loaded from a JSON deck."
-
-# Each entry is (flags, keyword arguments for add_argument).
-OPTIONS: list[tuple[tuple[str, ...], dict[str, Any]]] = [
-    (
-        ("-f", "--file"),
-        {
-            "type": Path,
-            "default": DEFAULT_DECK,
-            "help": "path to a JSON deck (default: data/glossary.json)",
-        },
-    ),
-    (
-        ("-m", "--mode"),
-        {
-            "choices": sorted(MODE_BUILDERS),
-            "default": DEFAULT_MODE,
-            "help": "order in which cards are asked (default: sequential)",
-        },
-    ),
-    (
-        ("--stats",),
-        {
-            "action": "store_true",
-            "help": "print a session summary when the quiz ends",
-        },
-    ),
-    (
-        ("--export",),
-        {
-            "type": Path,
-            "metavar": "PATH",
-            "help": "save the session summary as a JSON report",
-        },
-    ),
-    (
-        ("--log-file",),
-        {
-            "type": Path,
-            "metavar": "PATH",
-            "help": "append one line per answer to this log file",
-        },
-    ),
-    (
-        ("--no-color",),
-        {"action": "store_true", "help": "disable colored output"},
-    ),
-]
-
-
-def build_parser() -> argparse.ArgumentParser:
-    """Create the argument parser with every supported flag."""
-    parser = argparse.ArgumentParser(prog="main.py", description=DESCRIPTION)
-    for flags, options in OPTIONS:
-        parser.add_argument(*flags, **options)
-    return parser
+__all__ = ["DEFAULT_DECK", "build_parser", "main", "run"]
 
 
 def run(
@@ -80,7 +33,7 @@ def run(
     ask: Optional[Callable[[str], str]] = None,
     out: Optional[TextIO] = None,
 ) -> int:
-    """Run the quiz described by the command line and return an exit code.
+    """Run the command described by the arguments and return an exit code.
 
     Args:
         argv: Arguments to parse. Defaults to the process arguments.
@@ -89,10 +42,39 @@ def run(
     """
     args = build_parser().parse_args(argv)
     try:
-        _play(args, ask, out)
-    except (FlashcardError, OSError) as error:
+        return _dispatch(args, ask, out)
+    except (ConfigError, FlashcardError, GenerationError, OSError) as error:
         return _fail(f"Error: {error}")
+
+
+def _dispatch(
+    args: argparse.Namespace,
+    ask: Optional[Callable[[str], str]],
+    out: Optional[TextIO],
+) -> int:
+    """Generate a deck when asked, otherwise run the quiz."""
+    if args.generate is not None:
+        return _generate(args, out)
+    _play(args, ask, out)
     return 0
+
+
+def _generate(args: argparse.Namespace, out: Optional[TextIO]) -> int:
+    """Create a deck with AI, save it, and report how many cards were written."""
+    if args.save is None:
+        raise GenerationError("--generate needs --save PATH to write the deck.")
+    cards = generate_deck(args.generate, args.count, os.environ.get(API_KEY_ENV, ""))
+    save_deck(cards, args.save)
+    output = out if out is not None else sys.stdout
+    output.write(f"Saved {len(cards)} cards to {args.save}\n")
+    return 0
+
+
+def _settings(args: argparse.Namespace) -> dict[str, Any]:
+    """Resolve settings: flags, then environment, then config file, then defaults."""
+    flags = {"mode": args.mode, "deck": args.file, "log_file": args.log_file}
+    config = load_config_file(config_path_from_env(os.environ))
+    return resolve_settings(flags, os.environ, config)
 
 
 def _play(
@@ -101,13 +83,19 @@ def _play(
     out: Optional[TextIO],
 ) -> None:
     """Load the deck, run the quiz, and produce any requested reports."""
-    cards = load_flashcards(args.file)
+    settings = _settings(args)
+    session = _new_session(settings)
     output = out if out is not None else sys.stdout
-    session = QuizSession(create_quiz_mode(args.mode, cards, new_generator()))
     color = use_color(output) and not args.no_color
     _check_export_target(args.export)
-    _run_with_logging(session, args, ask, output, color)
-    _report(args, session, output, color)
+    _run_with_logging(session, settings, ask, output, color)
+    _report(args, settings, session, output, color)
+
+
+def _new_session(settings: Mapping[str, Any]) -> QuizSession:
+    """Load the deck named in the settings and start a quiz session on it."""
+    cards = load_flashcards(settings["deck"])
+    return QuizSession(create_quiz_mode(settings["mode"], cards, new_generator()))
 
 
 def _check_export_target(path: Optional[Path]) -> None:
@@ -122,20 +110,22 @@ def _check_export_target(path: Optional[Path]) -> None:
 
 def _run_with_logging(
     session: QuizSession,
-    args: argparse.Namespace,
+    settings: Mapping[str, Any],
     ask: Optional[Callable[[str], str]],
     output: TextIO,
     color: bool,
 ) -> None:
-    """Run the quiz, appending each answer to the log file when one is given."""
+    """Run the quiz, appending each answer to the log file when one is set."""
     with ExitStack() as stack:
-        if args.log_file is not None:
-            session.add_observer(stack.enter_context(AnswerLogger(args.log_file)))
+        if settings["log_file"] is not None:
+            logger = AnswerLogger(Path(settings["log_file"]))
+            session.add_observer(stack.enter_context(logger))
         run_quiz(session, ask or input, output, color)
 
 
 def _report(
     args: argparse.Namespace,
+    settings: Mapping[str, Any],
     session: QuizSession,
     output: TextIO,
     color: bool,
@@ -144,7 +134,7 @@ def _report(
     if args.stats:
         output.write(format_stats(session.stats, color) + "\n")
     if args.export is not None:
-        report = build_report(session.stats, args.mode, str(args.file))
+        report = build_report(session.stats, settings["mode"], str(settings["deck"]))
         write_report(report, args.export)
 
 

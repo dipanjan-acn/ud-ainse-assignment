@@ -7,6 +7,15 @@ from typing import Any
 from utils.flashcard import Flashcard, FlashcardError, flashcard_from_dict
 
 SHAPE_ERROR = "The deck must be a list of cards or an object with a 'cards' list."
+# Largest deck file accepted, in bytes. Stops an oversized file exhausting memory.
+MAX_DECK_BYTES = 1_000_000
+
+
+def save_deck(cards: list[Flashcard], path: Path) -> None:
+    """Write cards as a JSON array deck that load_flashcards can read back."""
+    data = [{"front": card.front, "back": card.back} for card in cards]
+    text = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
+    path.write_text(text, encoding="utf-8")
 
 
 def load_flashcards(path: str | Path) -> list[Flashcard]:
@@ -68,9 +77,19 @@ def _read_text(path: Path) -> str:
     if path.is_dir():
         raise FlashcardError(f"{path} is not a file.")
     try:
+        _check_size(path)
         return path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as error:
         raise _read_failure(path, error) from error
+
+
+def _check_size(path: Path) -> None:
+    """Reject a deck file larger than MAX_DECK_BYTES before reading it."""
+    size = path.stat().st_size
+    if size > MAX_DECK_BYTES:
+        raise FlashcardError(
+            f"{path.name} is too large: {size:,} bytes (limit {MAX_DECK_BYTES:,})."
+        )
 
 
 def _read_failure(path: Path, error: Exception) -> FlashcardError:
